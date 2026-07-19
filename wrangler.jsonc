@@ -88,22 +88,10 @@
       "migrations_dir": "drizzle",
     },
   ],
-  // Postgres scale path (opt-in; D1 is the default). Hyperdrive is the ONLY way
-  // the app connects to Postgres — there is no direct-connection fallback. For
-  // local dev, `localConnectionString` is the throwaway Docker Postgres from
-  // docs/LOCAL_POSTGRES.md, and nothing connects to it unless
-  // DATABASE_PROVIDER=postgres is set in .env.local.
-  //
-  // Running raw `wrangler deploy` against another account? DELETE this block —
-  // the id lives in OpenSEO's account and the deploy fails without access to
-  // it. (Alchemy deploys and the Docker image never read it.)
-  "hyperdrive": [
-    {
-      "binding": "HYPERDRIVE",
-      "id": "9d64ccfb559f44449ce52a143912f898",
-      "localConnectionString": "postgres://openseo:openseo@localhost:5433/openseo",
-    },
-  ],
+  // Postgres scale path removed for self-hosting: the upstream Hyperdrive
+  // binding pointed at OpenSEO's own Cloudflare account, so `wrangler deploy`
+  // fails without access to it. D1 (the `DB` binding above) stays the default
+  // as long as DATABASE_PROVIDER is unset.
   "r2_buckets": [
     {
       "bucket_name": "open-seo",
