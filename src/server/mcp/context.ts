@@ -17,6 +17,7 @@ type McpAuth = {
   clientId: string | null;
   audience: string;
   subject: string;
+  serviceProjectIds?: string[];
 };
 
 export const MCP_AUTH_CONTEXT_PROP = "openSeoAuth";
@@ -31,6 +32,9 @@ const mcpToolAuthContextSchema = z.object({
   audience: z.string().min(1),
   subject: z.string().min(1),
   baseUrl: z.string().url(),
+  // Present only for an explicitly configured Cloudflare machine principal.
+  // userId/email identify its existing resource owner, never the actor.
+  serviceProjectIds: z.array(z.string().min(1)).min(1).optional(),
 });
 
 export type McpToolAuthContext = z.infer<typeof mcpToolAuthContextSchema>;

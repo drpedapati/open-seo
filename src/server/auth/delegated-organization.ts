@@ -1,7 +1,7 @@
 import { AuthRepository } from "@/server/auth/repositories/AuthRepository";
 import { slugify, toHex } from "./org-slug";
 
-function getDelegatedOrganizationId(userId: string) {
+export function getDelegatedOrganizationId(userId: string) {
   return `delegated-${userId}`;
 }
 

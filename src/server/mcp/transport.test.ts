@@ -7,7 +7,7 @@ import { z } from "zod";
 import { MCP_AUTH_CONTEXT_PROP } from "@/server/mcp/context";
 
 const selfHostedAuthMocks = vi.hoisted(() => ({
-  resolveCloudflareAccessContext: vi.fn(),
+  resolveCloudflareMcpContext: vi.fn(),
   resolveLocalNoAuthContext: vi.fn(),
 }));
 
@@ -17,9 +17,8 @@ const serverMocks = vi.hoisted(() => ({
   lastServer: undefined as McpServer | undefined,
 }));
 
-vi.mock("@/middleware/ensure-user/cloudflareAccess", () => ({
-  resolveCloudflareAccessContext:
-    selfHostedAuthMocks.resolveCloudflareAccessContext,
+vi.mock("@/server/mcp/service-auth", () => ({
+  resolveCloudflareMcpContext: selfHostedAuthMocks.resolveCloudflareMcpContext,
 }));
 
 vi.mock("@/middleware/ensure-user/delegated", () => ({
@@ -95,10 +94,15 @@ describe("handleSelfHostedOpenSeoMcpRequest", () => {
       userEmail: "admin@localhost",
       organizationId: "delegated-local-admin",
     });
-    selfHostedAuthMocks.resolveCloudflareAccessContext.mockResolvedValue({
+    selfHostedAuthMocks.resolveCloudflareMcpContext.mockResolvedValue({
       userId: "cloudflare-user",
       userEmail: "person@example.com",
       organizationId: "delegated-cloudflare-user",
+      clientId: null,
+      scopes: [],
+      subject: "cloudflare-user",
+      baseUrl: "https://open-seo.test",
+      audience: "https://open-seo.test/mcp",
     });
   });
 
@@ -144,8 +148,8 @@ describe("handleSelfHostedOpenSeoMcpRequest", () => {
 
     expect(response.status).toBe(200);
     expect(
-      selfHostedAuthMocks.resolveCloudflareAccessContext,
-    ).toHaveBeenCalledWith(expect.any(Headers));
+      selfHostedAuthMocks.resolveCloudflareMcpContext,
+    ).toHaveBeenCalledWith(expect.any(Headers), "https://open-seo.test");
     expect(
       body.options.authContext?.props[MCP_AUTH_CONTEXT_PROP],
     ).toMatchObject({
@@ -196,9 +200,43 @@ describe("handleSelfHostedOpenSeoMcpRequest", () => {
 
     expect(response.status).toBe(200);
     expect(
-      selfHostedAuthMocks.resolveCloudflareAccessContext,
+      selfHostedAuthMocks.resolveCloudflareMcpContext,
     ).not.toHaveBeenCalled();
     expect(body.options.authContext).toBeUndefined();
+  });
+
+  it("preserves the service principal and builds only the restricted tool set", async () => {
+    selfHostedAuthMocks.resolveCloudflareMcpContext.mockResolvedValue({
+      userId: "owner",
+      userEmail: "owner@example.com",
+      organizationId: "delegated-owner",
+      clientId: "fixture.access",
+      subject: "service:fixture.access",
+      scopes: ["mcp:read"],
+      audience: "https://open-seo.test/mcp",
+      baseUrl: "https://open-seo.test",
+      serviceProjectIds: ["project-1"],
+    });
+    const { handleSelfHostedOpenSeoMcpRequest } = await import("./transport");
+    const { registerOpenSeoMcpTools } = await import("./server");
+    const response = await handleSelfHostedOpenSeoMcpRequest(
+      createMcpRequest(),
+      "cloudflare_access",
+      {},
+      ctx,
+    );
+    const body = transportOptionsSchema.parse(await response.json());
+    expect(
+      body.options.authContext?.props[MCP_AUTH_CONTEXT_PROP],
+    ).toMatchObject({
+      subject: "service:fixture.access",
+      serviceProjectIds: ["project-1"],
+      scopes: ["mcp:read"],
+    });
+    expect(registerOpenSeoMcpTools).toHaveBeenCalledWith(
+      expect.anything(),
+      true,
+    );
   });
 
   // Directory scanners (e.g. Smithery) read server metadata from initialize.

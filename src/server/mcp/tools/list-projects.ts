@@ -38,7 +38,12 @@ export const listProjectsTool = {
   },
   handler: async (_args: Record<string, never>, extra: ToolExtra) => {
     const { baseUrl, ...auth } = requireMcpToolAuthContext(extra);
-    const projects = await ProjectService.listProjects(auth.organizationId);
+    const allProjects = await ProjectService.listProjects(auth.organizationId);
+    const projects = auth.serviceProjectIds
+      ? allProjects.filter((project) =>
+          auth.serviceProjectIds?.includes(project.id),
+        )
+      : allProjects;
     const lines =
       projects.length === 0
         ? ["No projects yet. Create one in the dashboard."]
