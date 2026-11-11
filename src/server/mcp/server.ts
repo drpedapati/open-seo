@@ -35,7 +35,10 @@ import { whoamiTool } from "@/server/mcp/tools/whoami";
 // registered one explicit call at a time (not via a loop/helper) so each one's
 // input/output schema types stay concrete, which the SDK's registerTool
 // generics require to type the handler callback.
-export function registerOpenSeoMcpTools(server: McpServer) {
+export function registerOpenSeoMcpTools(
+  server: McpServer,
+  readOnlyService = false,
+) {
   server.registerTool(
     whoamiTool.name,
     whoamiTool.config,
@@ -63,6 +66,54 @@ export function registerOpenSeoMcpTools(server: McpServer) {
       listSavedKeywordsTool.handler,
     ),
   );
+  server.registerTool(
+    getRankTrackerTool.name,
+    getRankTrackerTool.config,
+    instrumentMcpToolHandler(
+      getRankTrackerTool.name,
+      getRankTrackerTool.config.outputSchema,
+      getRankTrackerTool.handler,
+    ),
+  );
+  server.registerTool(
+    getSearchConsolePerformanceTool.name,
+    getSearchConsolePerformanceTool.config,
+    instrumentMcpToolHandler(
+      getSearchConsolePerformanceTool.name,
+      getSearchConsolePerformanceTool.config.outputSchema,
+      getSearchConsolePerformanceTool.handler,
+    ),
+  );
+  server.registerTool(
+    inspectUrlsTool.name,
+    inspectUrlsTool.config,
+    instrumentMcpToolHandler(
+      inspectUrlsTool.name,
+      inspectUrlsTool.config.outputSchema,
+      inspectUrlsTool.handler,
+    ),
+  );
+  server.registerTool(
+    getAuditIssuesTool.name,
+    getAuditIssuesTool.config,
+    instrumentMcpToolHandler(
+      getAuditIssuesTool.name,
+      getAuditIssuesTool.config.outputSchema,
+      getAuditIssuesTool.handler,
+    ),
+  );
+  server.registerTool(
+    getAuditPagesTool.name,
+    getAuditPagesTool.config,
+    instrumentMcpToolHandler(
+      getAuditPagesTool.name,
+      getAuditPagesTool.config.outputSchema,
+      getAuditPagesTool.handler,
+    ),
+  );
+  // Only the explicitly reviewed read tools above are exposed to services.
+  if (readOnlyService) return;
+
   server.registerTool(
     researchKeywordsTool.name,
     researchKeywordsTool.config,
@@ -127,15 +178,6 @@ export function registerOpenSeoMcpTools(server: McpServer) {
     ),
   );
   server.registerTool(
-    getRankTrackerTool.name,
-    getRankTrackerTool.config,
-    instrumentMcpToolHandler(
-      getRankTrackerTool.name,
-      getRankTrackerTool.config.outputSchema,
-      getRankTrackerTool.handler,
-    ),
-  );
-  server.registerTool(
     getRankedKeywordsTool.name,
     getRankedKeywordsTool.config,
     instrumentMcpToolHandler(
@@ -190,24 +232,6 @@ export function registerOpenSeoMcpTools(server: McpServer) {
     ),
   );
   server.registerTool(
-    getSearchConsolePerformanceTool.name,
-    getSearchConsolePerformanceTool.config,
-    instrumentMcpToolHandler(
-      getSearchConsolePerformanceTool.name,
-      getSearchConsolePerformanceTool.config.outputSchema,
-      getSearchConsolePerformanceTool.handler,
-    ),
-  );
-  server.registerTool(
-    inspectUrlsTool.name,
-    inspectUrlsTool.config,
-    instrumentMcpToolHandler(
-      inspectUrlsTool.name,
-      inspectUrlsTool.config.outputSchema,
-      inspectUrlsTool.handler,
-    ),
-  );
-  server.registerTool(
     runSiteAuditTool.name,
     runSiteAuditTool.config,
     instrumentMcpToolHandler(
@@ -223,24 +247,6 @@ export function registerOpenSeoMcpTools(server: McpServer) {
       getAuditStatusTool.name,
       getAuditStatusTool.config.outputSchema,
       getAuditStatusTool.handler,
-    ),
-  );
-  server.registerTool(
-    getAuditIssuesTool.name,
-    getAuditIssuesTool.config,
-    instrumentMcpToolHandler(
-      getAuditIssuesTool.name,
-      getAuditIssuesTool.config.outputSchema,
-      getAuditIssuesTool.handler,
-    ),
-  );
-  server.registerTool(
-    getAuditPagesTool.name,
-    getAuditPagesTool.config,
-    instrumentMcpToolHandler(
-      getAuditPagesTool.name,
-      getAuditPagesTool.config.outputSchema,
-      getAuditPagesTool.handler,
     ),
   );
 }

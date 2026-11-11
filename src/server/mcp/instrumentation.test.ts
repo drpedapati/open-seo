@@ -2,6 +2,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
+  MCP_AUTH_CONTEXT_PROP,
   runWithMcpToolAuthContext,
   type McpToolAuthContext,
   type ToolExtra,
@@ -35,13 +36,6 @@ vi.mock("@/server/lib/self-host-telemetry", () => ({
   incrementSelfHostMcpToolCallCount: mocks.incrementSelfHostMcpToolCallCount,
 }));
 
-const toolExtra: ToolExtra = {
-  signal: new AbortController().signal,
-  requestId: 1,
-  sendNotification: vi.fn(),
-  sendRequest: vi.fn(),
-};
-
 const outputSchema = { items: z.array(z.object({}).passthrough()) };
 
 function okResult(structuredContent: Record<string, unknown>): CallToolResult {
@@ -57,6 +51,19 @@ const authContext: McpToolAuthContext = {
   audience: "https://app.openseo.so/mcp",
   subject: "user-1",
   baseUrl: "https://app.openseo.so",
+};
+
+const toolExtra: ToolExtra = {
+  signal: new AbortController().signal,
+  requestId: 1,
+  authInfo: {
+    token: "fixture",
+    clientId: "client-1",
+    scopes: ["mcp"],
+    extra: { [MCP_AUTH_CONTEXT_PROP]: authContext },
+  },
+  sendNotification: vi.fn(),
+  sendRequest: vi.fn(),
 };
 
 describe("instrumentMcpToolHandler", () => {
@@ -171,15 +178,63 @@ describe("instrumentMcpToolHandler", () => {
     });
   });
 
-  it("skips the usage event when auth context is missing", async () => {
+  it("rejects missing auth context before executing or recording usage", async () => {
     const { instrumentMcpToolHandler } = await import("./instrumentation");
     const wrapped = instrumentMcpToolHandler("demo", outputSchema, async () =>
       okResult({ items: [] }),
     );
 
-    await wrapped({}, toolExtra);
+    await expect(
+      wrapped({}, { ...toolExtra, authInfo: undefined }),
+    ).rejects.toThrow("MCP auth context missing");
 
     expect(mocks.captureServerEvent).not.toHaveBeenCalled();
+    expect(mocks.recordExternalMcpToolCall).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "research_keywords",
+    "save_keywords",
+    "run_site_audit",
+    "get_audit_status",
+    "future_tool",
+  ])(
+    "blocks service invocation of %s before the handler or analytics",
+    async (name) => {
+      const { instrumentMcpToolHandler } = await import("./instrumentation");
+      const handler = vi.fn();
+      const wrapped = instrumentMcpToolHandler(name, undefined, handler);
+      await expect(
+        runWithMcpToolAuthContext(
+          {
+            ...authContext,
+            subject: "service:client-1",
+            serviceProjectIds: ["project-1"],
+          },
+          () => wrapped({}, toolExtra),
+        ),
+      ).rejects.toThrow("FORBIDDEN");
+      expect(handler).not.toHaveBeenCalled();
+      expect(mocks.recordExternalMcpToolCall).not.toHaveBeenCalled();
+      expect(mocks.captureServerEvent).not.toHaveBeenCalled();
+    },
+  );
+
+  it("allows service reads without writing telemetry or human activation", async () => {
+    const { instrumentMcpToolHandler } = await import("./instrumentation");
+    const handler = vi.fn().mockResolvedValue(okResult({ items: [] }));
+    await runWithMcpToolAuthContext(
+      { ...authContext, serviceProjectIds: ["project-1"] },
+      () =>
+        instrumentMcpToolHandler(
+          "list_projects",
+          undefined,
+          handler,
+        )({}, toolExtra),
+    );
+    expect(handler).toHaveBeenCalledOnce();
+    expect(mocks.captureServerEvent).not.toHaveBeenCalled();
+    expect(mocks.incrementSelfHostMcpToolCallCount).not.toHaveBeenCalled();
     expect(mocks.recordExternalMcpToolCall).not.toHaveBeenCalled();
   });
 

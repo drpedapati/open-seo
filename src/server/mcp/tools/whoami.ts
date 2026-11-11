@@ -32,6 +32,8 @@ export const whoamiTool = {
       scopes: z.array(z.string()),
       mode: z.enum(["hosted", "self-hosted"]),
       creditsRemaining: z.number().nullable(),
+      serviceActor: z.string().optional(),
+      allowedProjectIds: z.array(z.string()).optional(),
       ...optionalMetaOutputSchema,
     },
     annotations: {
@@ -44,7 +46,7 @@ export const whoamiTool = {
     const auth = getAuth(extra);
     const isHosted = await isHostedServerAuthMode();
     let creditsRemaining: number | null = null;
-    if (isHosted) {
+    if (isHosted && !auth.serviceProjectIds) {
       const [base, topup] = await Promise.all([
         checkBalance(AUTUMN_SEO_DATA_BALANCE_FEATURE_ID, auth.organizationId),
         checkBalance(
@@ -55,11 +57,14 @@ export const whoamiTool = {
       creditsRemaining = (base ?? 0) + (topup ?? 0);
     }
     const lines = [
-      `User: ${auth.userId} (${auth.userEmail})`,
+      `${auth.serviceProjectIds ? "Resource owner" : "User"}: ${auth.userId} (${auth.userEmail})`,
       `Organization: ${auth.organizationId}`,
       `Mode: ${isHosted ? "hosted" : "self-hosted"}`,
       `Scopes: ${auth.scopes.length > 0 ? auth.scopes.join(", ") : "none"}`,
     ];
+    if (auth.serviceProjectIds) {
+      lines.unshift(`Service actor: ${auth.subject} (read-only)`);
+    }
     if (isHosted) {
       lines.push(
         `Credits remaining: ${creditsRemaining != null ? creditsRemaining.toLocaleString() : "unknown"}`,
@@ -78,6 +83,12 @@ export const whoamiTool = {
         scopes: auth.scopes,
         mode: isHosted ? "hosted" : "self-hosted",
         creditsRemaining,
+        ...(auth.serviceProjectIds
+          ? {
+              serviceActor: auth.subject,
+              allowedProjectIds: auth.serviceProjectIds,
+            }
+          : {}),
       },
     });
   },

@@ -7,7 +7,8 @@ import {
   type AnySchema,
   type ZodRawShapeCompat,
 } from "@modelcontextprotocol/sdk/server/zod-compat.js";
-import { asAppError } from "@/server/lib/errors";
+import { AppError, asAppError } from "@/server/lib/errors";
+import { SERVICE_READ_TOOLS } from "@/server/mcp/service-policy";
 import { recordExternalMcpToolCall } from "@/server/features/activation/mcpActivation";
 import { captureServerError, captureServerEvent } from "@/server/lib/posthog";
 import { shouldCaptureAppErrorCode } from "@/shared/error-codes";
@@ -31,10 +32,12 @@ function captureMcpToolCall(
   extra: ToolExtra,
   outcome: { success: boolean; errorCode?: string },
 ) {
-  waitUntil(incrementSelfHostMcpToolCallCount());
-
   try {
     const auth = getAuth(extra);
+    // Do not write activation/telemetry state or attribute automation to its
+    // resource owner. Cloudflare request logs identify the service principal.
+    if (auth.serviceProjectIds) return;
+    waitUntil(incrementSelfHostMcpToolCallCount());
     waitUntil(
       captureServerEvent({
         distinctId: auth.userId,
@@ -76,6 +79,12 @@ export function instrumentMcpToolHandler<TArgs>(
   const normalizedOutputSchema = normalizeObjectSchema(outputSchema);
 
   return async (args, extra) => {
+    const auth = getAuth(extra);
+    // Enforce on invocation too: discovery hints and the tools/list response
+    // are not authorization. Unknown future tools are denied by default.
+    if (auth.serviceProjectIds && !SERVICE_READ_TOOLS.has(toolName)) {
+      throw new AppError("FORBIDDEN");
+    }
     try {
       const result = await handler(args, extra);
       // The SDK converts an output-schema mismatch into a client-visible
@@ -96,16 +105,17 @@ export function instrumentMcpToolHandler<TArgs>(
           // received *types*), so it carries no row data. Keep it that way:
           // output schemas must not gain value-echoing refinements (enums on
           // user data, etc.) that would surface response values in PostHog.
-          waitUntil(
-            captureServerError(
-              new Error(`MCP output validation failed for ${toolName}`),
-              {
-                errorCode: "MCP_OUTPUT_VALIDATION",
-                tool: toolName,
-                issues: getParseErrorMessage(validation.error).slice(0, 500),
-              },
-            ),
-          );
+          if (!auth.serviceProjectIds)
+            waitUntil(
+              captureServerError(
+                new Error(`MCP output validation failed for ${toolName}`),
+                {
+                  errorCode: "MCP_OUTPUT_VALIDATION",
+                  tool: toolName,
+                  issues: getParseErrorMessage(validation.error).slice(0, 500),
+                },
+              ),
+            );
         }
       }
       captureMcpToolCall(
@@ -122,8 +132,7 @@ export function instrumentMcpToolHandler<TArgs>(
       // path after the first call.
       if (!result.isError && !outputValidationFailed) {
         try {
-          const auth = getAuth(extra);
-          if (auth.clientId) {
+          if (auth.clientId && !auth.serviceProjectIds) {
             await recordExternalMcpToolCall(auth.organizationId);
           }
         } catch {
@@ -132,6 +141,7 @@ export function instrumentMcpToolHandler<TArgs>(
       }
       return result;
     } catch (error) {
+      if (auth.serviceProjectIds) throw error;
       const appError = asAppError(error);
       captureMcpToolCall(toolName, extra, {
         success: false,

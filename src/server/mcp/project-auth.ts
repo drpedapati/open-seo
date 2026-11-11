@@ -12,6 +12,9 @@ type ProjectScopedArgs = {
 
 async function requireProjectAccess(extra: ToolExtra, projectId: string) {
   const { baseUrl, ...auth } = requireMcpToolAuthContext(extra);
+  if (auth.serviceProjectIds && !auth.serviceProjectIds.includes(projectId)) {
+    throw new AppError("FORBIDDEN");
+  }
 
   // Authorize the caller-supplied projectId against the token's organization.
   // Assert on the result instead of relying on the lookup throwing, so this

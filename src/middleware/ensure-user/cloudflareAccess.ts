@@ -43,9 +43,7 @@ function getValidatedTeamDomain(teamDomain: string) {
   }
 }
 
-export async function resolveCloudflareAccessContext(
-  headers: Headers,
-): Promise<EnsuredUserContext> {
+export async function verifyCloudflareAccessToken(headers: Headers) {
   const teamDomain = env.TEAM_DOMAIN
     ? getValidatedTeamDomain(env.TEAM_DOMAIN)
     : null;
@@ -69,15 +67,10 @@ export async function resolveCloudflareAccessContext(
     const { payload } = await jwtVerify(token, jwks, {
       issuer: teamDomain,
       audience: policyAud,
+      algorithms: ["RS256"],
+      requiredClaims: ["exp"],
     });
-    const userId = typeof payload.sub === "string" ? payload.sub : null;
-    const userEmail = typeof payload.email === "string" ? payload.email : null;
-
-    if (!userId || !userEmail) {
-      throw new AppError("UNAUTHENTICATED");
-    }
-
-    return resolveDelegatedContext(userId, userEmail);
+    return payload;
   } catch (error) {
     if (error instanceof AppError) {
       throw error;
@@ -85,4 +78,19 @@ export async function resolveCloudflareAccessContext(
 
     throw new AppError("UNAUTHENTICATED");
   }
+}
+
+export async function resolveCloudflareAccessContext(
+  headers: Headers,
+): Promise<EnsuredUserContext> {
+  const payload = await verifyCloudflareAccessToken(headers);
+  const userId = typeof payload.sub === "string" ? payload.sub : null;
+  const userEmail = typeof payload.email === "string" ? payload.email : null;
+
+  // Service tokens are accepted only by the separately scoped MCP resolver.
+  // Dashboard, server functions and chat continue to require a human identity.
+  if (!userId || !userEmail || payload.common_name !== undefined) {
+    throw new AppError("UNAUTHENTICATED");
+  }
+  return resolveDelegatedContext(userId, userEmail);
 }

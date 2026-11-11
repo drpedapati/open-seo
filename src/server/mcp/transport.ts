@@ -1,7 +1,7 @@
 import { createMcpHandler } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { MCP_SCOPE } from "@/lib/oauth-resource";
-import { resolveCloudflareAccessContext } from "@/middleware/ensure-user/cloudflareAccess";
+import { resolveCloudflareMcpContext } from "@/server/mcp/service-auth";
 import { resolveLocalNoAuthContext } from "@/middleware/ensure-user/delegated";
 import {
   buildFirstPartyMcpAuthContext,
@@ -14,7 +14,7 @@ import {
 import { getPublicOrigin } from "@/server/mcp/public-origin";
 import { registerOpenSeoMcpTools } from "@/server/mcp/server";
 
-function createOpenSeoMcpServer() {
+function createOpenSeoMcpServer(readOnlyService = false) {
   const server = new McpServer(
     {
       name: "OpenSEO MCP",
@@ -32,11 +32,12 @@ function createOpenSeoMcpServer() {
       ],
     },
     {
-      instructions:
-        "OpenSEO research tools use credits. Proceed with normal focused research, but ask the user for confirmation before planned batches over 2,000 credits.",
+      instructions: readOnlyService
+        ? "Read-only service access to explicitly allowed projects. Paid research, refreshes and editing are unavailable."
+        : "OpenSEO research tools use credits. Proceed with normal focused research, but ask the user for confirmation before planned batches over 2,000 credits.",
     },
   );
-  registerOpenSeoMcpTools(server);
+  registerOpenSeoMcpTools(server, readOnlyService);
 
   return server;
 }
@@ -76,16 +77,12 @@ export async function handleSelfHostedOpenSeoMcpRequest(
   const baseUrl = getPublicOrigin(request);
   const context =
     authMode === "local_noauth"
-      ? await resolveLocalNoAuthContext()
-      : await resolveCloudflareAccessContext(request.headers);
-  const props = createWorkersOAuthMcpProps(
-    buildFirstPartyMcpAuthContext({
-      userId: context.userId,
-      userEmail: context.userEmail,
-      organizationId: context.organizationId,
-      baseUrl,
-    }),
-  );
+      ? buildFirstPartyMcpAuthContext({
+          ...(await resolveLocalNoAuthContext()),
+          baseUrl,
+        })
+      : await resolveCloudflareMcpContext(request.headers, baseUrl);
+  const props = createWorkersOAuthMcpProps(context);
 
   return handleOpenSeoMcpRequest(request, props, env, ctx);
 }
@@ -114,7 +111,9 @@ function handleOpenSeoMcpRequest(
     );
   }
 
-  const server = createOpenSeoMcpServer();
+  const server = createOpenSeoMcpServer(
+    !!props?.[MCP_AUTH_CONTEXT_PROP].serviceProjectIds,
+  );
   const handler = createMcpHandler(server, {
     route: MCP_ROUTE,
     enableJsonResponse: true,
